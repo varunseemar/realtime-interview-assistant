@@ -29,6 +29,12 @@ const DEFAULT_PARAMS = {
   vad_events: 'true', // SpeechStarted events
 };
 
+function describeError(err) {
+  if (/\b401\b/.test(err.message)) return new Error('Deepgram rejected the API key. Check DEEPGRAM_API_KEY in server/.env.');
+  if (/\b402\b/.test(err.message)) return new Error('Deepgram account is out of credit.');
+  return err;
+}
+
 export class DeepgramStream extends EventEmitter {
   #apiKey;
   #params;
@@ -58,7 +64,7 @@ export class DeepgramStream extends EventEmitter {
     });
 
     ws.on('message', (data) => this.#handleMessage(data));
-    ws.on('error', (err) => this.emit('error', err));
+    ws.on('error', (err) => this.emit('error', describeError(err)));
     ws.on('close', (code, reason) => {
       clearInterval(this.#keepAliveTimer);
       clearTimeout(this.#closeTimer);
