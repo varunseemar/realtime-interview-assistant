@@ -3,29 +3,62 @@
 import { useCallback, useReducer, useRef } from 'react';
 import { ServerMsg, Status } from '../protocol.js';
 
+const MAX_HISTORY = 10;
+
 const initialState = {
   status: Status.IDLE,
-  finals: [], // [{ id, text }] confirmed transcript segments
+  transcript: [], // [{ id, kind: 'final' | 'ignored' | 'question', text, reason? }]
   interim: '', // current in-progress segment, replaced on every update
-  question: null, // { id, text }
+  question: null, // { id, text, behavioral }
   answer: '',
+  answerDone: false,
+  history: [], // earlier [{ id, question, answer, behavioral }], newest first
   error: null,
 };
+
+const appendTranscript = (state, item) => ({
+  ...state,
+  transcript: [...state.transcript, { id: state.transcript.length, ...item }],
+});
 
 function applyServerMessage(state, msg) {
   switch (msg.type) {
     case ServerMsg.STATUS:
       return { ...state, status: msg.state };
+
     case ServerMsg.TRANSCRIPT_INTERIM:
       return { ...state, interim: msg.text };
+
     case ServerMsg.TRANSCRIPT_FINAL:
+      return { ...appendTranscript(state, { kind: 'final', text: msg.text }), interim: '' };
+
+    case ServerMsg.UTTERANCE_IGNORED:
+      return appendTranscript(state, { kind: 'ignored', text: msg.text, reason: msg.reason });
+
+    case ServerMsg.QUESTION: {
+      const previous = state.question && state.answer
+        ? [{ id: state.question.id, question: state.question.text, answer: state.answer, behavioral: state.question.behavioral }]
+        : [];
       return {
-        ...state,
-        interim: '',
-        finals: [...state.finals, { id: state.finals.length, text: msg.text }],
+        ...appendTranscript(state, { kind: 'question', text: msg.text }),
+        question: { id: msg.id, text: msg.text, behavioral: msg.behavioral },
+        answer: '',
+        answerDone: false,
+        history: [...previous, ...state.history].slice(0, MAX_HISTORY),
+        error: null,
       };
+    }
+
+    case ServerMsg.ANSWER_DELTA:
+      // Ignore tokens from an answer that was superseded by a newer question.
+      return msg.id === state.question?.id ? { ...state, answer: state.answer + msg.token } : state;
+
+    case ServerMsg.ANSWER_DONE:
+      return msg.id === state.question?.id ? { ...state, answerDone: true } : state;
+
     case ServerMsg.ERROR:
       return { ...state, error: msg.message };
+
     default:
       return state;
   }

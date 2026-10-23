@@ -8,7 +8,7 @@ const STATUS_LABELS = {
   [Status.ERROR]: 'Error',
 };
 
-export function StatusBar({ status, running, source, onSourceChange, onStart, onStop }) {
+export function StatusBar({ status, running, source, onSourceChange, onStart, onStop, contextReady, onToggleContext }) {
   return (
     <header className="status-bar">
       <h1 className="app-title">Interview Assistant</h1>
@@ -25,6 +25,10 @@ export function StatusBar({ status, running, source, onSourceChange, onStart, on
           <option value="mic">Microphone</option>
         </select>
       </label>
+
+      <button type="button" className="btn btn-ghost" onClick={onToggleContext}>
+        Context {contextReady ? '✓' : '(empty)'}
+      </button>
 
       <div className="controls">
         {running ? (

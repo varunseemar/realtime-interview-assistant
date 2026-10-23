@@ -10,6 +10,7 @@ export const ServerMsg = Object.freeze({
   STATUS: 'status',
   TRANSCRIPT_INTERIM: 'transcript.interim',
   TRANSCRIPT_FINAL: 'transcript.final',
+  UTTERANCE_IGNORED: 'utterance.ignored',
   QUESTION: 'question.detected',
   ANSWER_DELTA: 'answer.delta',
   ANSWER_DONE: 'answer.done',

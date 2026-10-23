@@ -1,4 +1,6 @@
-export function QuestionPanel({ question }) {
+import { ManualAsk } from './ManualAsk.jsx';
+
+export function QuestionPanel({ question, running, onAsk, onAnswerLast }) {
   return (
     <section className="panel question-panel">
       <h2 className="panel-title">Detected question</h2>
@@ -9,6 +11,7 @@ export function QuestionPanel({ question }) {
           <p className="placeholder">Waiting for the interviewer to ask a question…</p>
         )}
       </div>
+      <ManualAsk disabled={!running} onAsk={onAsk} onAnswerLast={onAnswerLast} />
     </section>
   );
 }
