@@ -1,0 +1,20 @@
+{
+  "name": "interview-assistant-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WebSocket backend: streams browser audio to Deepgram, detects questions, streams answers from Groq.",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.9"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "ws": "^8.22.0"
+  }
+}
