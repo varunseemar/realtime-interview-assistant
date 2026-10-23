@@ -16,4 +16,6 @@ export const config = Object.freeze({
   port: Number(process.env.PORT) || 8080,
   deepgramApiKey: process.env.DEEPGRAM_API_KEY,
   groqApiKey: process.env.GROQ_API_KEY,
+  answerModel: process.env.GROQ_ANSWER_MODEL || 'openai/gpt-oss-20b',
+  classifierModel: process.env.GROQ_CLASSIFIER_MODEL || 'openai/gpt-oss-20b',
 });

@@ -12,9 +12,10 @@ export const ServerMsg = Object.freeze({
   STATUS: 'status', // { state }
   TRANSCRIPT_INTERIM: 'transcript.interim', // { text }
   TRANSCRIPT_FINAL: 'transcript.final', // { text }
-  QUESTION: 'question.detected', // { id, text }
+  UTTERANCE_IGNORED: 'utterance.ignored', // { text, reason }
+  QUESTION: 'question.detected', // { id, text, behavioral }
   ANSWER_DELTA: 'answer.delta', // { id, token }
-  ANSWER_DONE: 'answer.done', // { id }
+  ANSWER_DONE: 'answer.done', // { id, failed? }
   METRICS: 'metrics', // { id, ...timings }
   ERROR: 'error', // { code, message }
 });
