@@ -13,6 +13,7 @@ const initialState = {
   answer: '',
   answerDone: false,
   history: [], // earlier [{ id, question, answer, behavioral }], newest first
+  metrics: [], // per-answer latency [{ id, detectionMs, ttftMs, e2eMs, totalMs }], oldest first
   error: null,
 };
 
@@ -55,6 +56,11 @@ function applyServerMessage(state, msg) {
 
     case ServerMsg.ANSWER_DONE:
       return msg.id === state.question?.id ? { ...state, answerDone: true } : state;
+
+    case ServerMsg.METRICS: {
+      const { type: _type, ...metrics } = msg;
+      return { ...state, metrics: [...state.metrics, metrics] };
+    }
 
     case ServerMsg.ERROR:
       return { ...state, error: msg.message };

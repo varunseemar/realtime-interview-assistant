@@ -6,17 +6,22 @@
 import { config } from './config.js';
 import { QuestionDetector } from './detection/questionDetector.js';
 import { isBehavioral } from './llm/prompts.js';
+import { AudioClock, computeMetrics } from './metrics.js';
 import { ClientMsg, ServerMsg, Status, send } from './protocol.js';
 import { DeepgramStream } from './stt/deepgramStream.js';
 
 const MAX_CONTEXT_CHARS = 12_000; // per field; keeps the prompt (and time to first token) small
+const MAX_QUESTION_CHARS = 1_000;
+const MEMORY_TURNS = 4; // earlier Q&A pairs sent with each question, for follow-ups
 
-const clip = (value) => (typeof value === 'string' ? value.trim().slice(0, MAX_CONTEXT_CHARS) : '');
+const clip = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 
 export function createSession(socket, { classify, streamAnswer }) {
   let stt = null;
   let detector = null;
+  let audioClock = new AudioClock();
   let context = { resume: '', jd: '' };
+  let history = []; // completed [{ question, answer }], oldest first
   let activeAnswer = null; // { id, controller }
   let nextQuestionId = 1;
   let status = Status.IDLE;
@@ -36,30 +41,38 @@ export function createSession(socket, { classify, streamAnswer }) {
 
   // ---------- answering ----------
 
-  async function answerQuestion(text) {
+  // speechEndAt: wall-clock ms the interviewer stopped talking (null for typed questions).
+  async function answerQuestion(text, { speechEndAt = null } = {}) {
     activeAnswer?.controller.abort(); // a newer question always wins
     const id = nextQuestionId++;
     const controller = new AbortController();
     activeAnswer = { id, controller };
+    const timings = { speechEndAt, detectedAt: Date.now(), firstTokenAt: null, doneAt: null };
 
     send(socket, ServerMsg.QUESTION, { id, text, behavioral: isBehavioral(text) });
     setStatus(Status.THINKING);
 
-    let receivedFirstToken = false;
     try {
-      await streamAnswer({
+      const answer = await streamAnswer({
         question: text,
         context,
+        history: history.slice(-MEMORY_TURNS),
         signal: controller.signal,
         onToken: (token) => {
-          if (!receivedFirstToken) {
-            receivedFirstToken = true;
+          if (timings.firstTokenAt === null) {
+            timings.firstTokenAt = Date.now();
             setStatus(Status.ANSWERING);
           }
           send(socket, ServerMsg.ANSWER_DELTA, { id, token });
         },
       });
+      timings.doneAt = Date.now();
+      history.push({ question: text, answer });
       send(socket, ServerMsg.ANSWER_DONE, { id });
+
+      const metrics = computeMetrics(timings);
+      send(socket, ServerMsg.METRICS, { id, ...metrics });
+      console.log(`[metrics] #${id} e2e=${metrics.e2eMs}ms detect=${metrics.detectionMs}ms ttft=${metrics.ttftMs}ms`);
     } catch (err) {
       if (controller.signal.aborted) return; // superseded or session stopped — not an error
       reportError('llm_error', err.message);
@@ -81,7 +94,9 @@ export function createSession(socket, { classify, streamAnswer }) {
 
   function createDetector() {
     const d = new QuestionDetector({ classify });
-    d.on('question', ({ text }) => answerQuestion(text));
+    d.on('question', ({ text, audioEndSec, forced }) => {
+      answerQuestion(text, { speechEndAt: forced ? null : audioClock.toWallClock(audioEndSec) });
+    });
     d.on('classifying', () => {
       if (!activeAnswer) setStatus(Status.THINKING);
     });
@@ -117,9 +132,11 @@ export function createSession(socket, { classify, streamAnswer }) {
     return s;
   }
 
-  function startListening({ resume, jd }) {
+  function startListening({ resume, jd, chunkMs }) {
     stopListening();
-    context = { resume: clip(resume), jd: clip(jd) };
+    context = { resume: clip(resume, MAX_CONTEXT_CHARS), jd: clip(jd, MAX_CONTEXT_CHARS) };
+    history = [];
+    audioClock = new AudioClock(Number(chunkMs) || undefined);
     detector = createDetector();
     stt = createStt();
     stt.connect();
@@ -138,7 +155,7 @@ export function createSession(socket, { classify, streamAnswer }) {
 
   // "Answer this" from the UI: typed text, or (empty) whatever was said last.
   function handleManualQuestion({ text }) {
-    const typed = typeof text === 'string' ? text.trim() : '';
+    const typed = clip(text, MAX_QUESTION_CHARS);
     if (typed) {
       answerQuestion(typed);
     } else if (!detector?.forceQuestion()) {
@@ -174,7 +191,9 @@ export function createSession(socket, { classify, streamAnswer }) {
 
   socket.on('message', (data, isBinary) => {
     if (isBinary) {
-      stt?.send(data);
+      if (!stt) return;
+      audioClock.markChunk();
+      stt.send(data);
     } else {
       handleControlMessage(data);
     }

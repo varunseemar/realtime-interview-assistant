@@ -3,7 +3,7 @@
 // shaped as { type, ...payload }. Mirrored in client/src/protocol.js.
 
 export const ClientMsg = Object.freeze({
-  START: 'session.start', // { resume, jd, source }
+  START: 'session.start', // { resume, jd, source, chunkMs }
   STOP: 'session.stop',
   MANUAL_QUESTION: 'question.manual', // { text }
 });
@@ -16,7 +16,7 @@ export const ServerMsg = Object.freeze({
   QUESTION: 'question.detected', // { id, text, behavioral }
   ANSWER_DELTA: 'answer.delta', // { id, token }
   ANSWER_DONE: 'answer.done', // { id, failed? }
-  METRICS: 'metrics', // { id, ...timings }
+  METRICS: 'metrics', // { id, detectionMs, ttftMs, e2eMs, totalMs }
   ERROR: 'error', // { code, message }
 });
 

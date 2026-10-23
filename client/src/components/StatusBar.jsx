@@ -1,4 +1,5 @@
 import { Status } from '../protocol.js';
+import { LatencyStats } from './LatencyStats.jsx';
 
 const STATUS_LABELS = {
   [Status.IDLE]: 'Idle',
@@ -8,7 +9,17 @@ const STATUS_LABELS = {
   [Status.ERROR]: 'Error',
 };
 
-export function StatusBar({ status, running, source, onSourceChange, onStart, onStop, contextReady, onToggleContext }) {
+export function StatusBar({
+  status,
+  running,
+  source,
+  onSourceChange,
+  onStart,
+  onStop,
+  contextReady,
+  onToggleContext,
+  metrics,
+}) {
   return (
     <header className="status-bar">
       <h1 className="app-title">Interview Assistant</h1>
@@ -29,6 +40,8 @@ export function StatusBar({ status, running, source, onSourceChange, onStart, on
       <button type="button" className="btn btn-ghost" onClick={onToggleContext}>
         Context {contextReady ? '✓' : '(empty)'}
       </button>
+
+      <LatencyStats metrics={metrics} />
 
       <div className="controls">
         {running ? (

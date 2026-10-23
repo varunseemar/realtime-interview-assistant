@@ -12,7 +12,7 @@
 //      into it and fire again, so the session can restart the answer with the full question.
 //
 // Emits:
-//   'question'    { text, audioEndSec, followOn }
+//   'question'    { text, audioEndSec, followOn, forced? }
 //   'ignored'     { text, reason }
 //   'classifying' { text }
 
@@ -57,7 +57,7 @@ export class QuestionDetector extends EventEmitter {
     const text = segments.length ? joinText(segments) : this.#lastUtterance;
     if (!text) return false;
     this.#lastQuestion = { text, end: segments.at(-1)?.end ?? this.#lastQuestion?.end ?? 0 };
-    this.emit('question', { text, audioEndSec: this.#lastQuestion.end, followOn: false });
+    this.emit('question', { text, audioEndSec: this.#lastQuestion.end, followOn: false, forced: true });
     return true;
   }
 

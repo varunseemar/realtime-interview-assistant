@@ -3,7 +3,7 @@
 
 import { useCallback, useRef } from 'react';
 
-const CHUNK_MS = 250; // smaller = lower latency, more WebSocket frames
+export const CHUNK_MS = 250; // smaller = lower latency, more WebSocket frames
 const PREFERRED_MIME = 'audio/webm;codecs=opus';
 
 async function getAudioStream(source) {

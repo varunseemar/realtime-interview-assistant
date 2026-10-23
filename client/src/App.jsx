@@ -4,7 +4,7 @@ import { ContextForm } from './components/ContextForm.jsx';
 import { QuestionPanel } from './components/QuestionPanel.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { TranscriptPanel } from './components/TranscriptPanel.jsx';
-import { useAudioCapture } from './hooks/useAudioCapture.js';
+import { CHUNK_MS, useAudioCapture } from './hooks/useAudioCapture.js';
 import { useInterviewSocket } from './hooks/useInterviewSocket.js';
 import { useLocalStorage } from './hooks/useLocalStorage.js';
 import { ClientMsg } from './protocol.js';
@@ -37,7 +37,7 @@ export default function App() {
           setRunning(false);
         },
       });
-      sendJson(ClientMsg.START, { source, resume: context.resume, jd: context.jd });
+      sendJson(ClientMsg.START, { source, resume: context.resume, jd: context.jd, chunkMs: CHUNK_MS });
       capture.record(sendBinary);
       setRunning(true);
       setShowContext(false);
@@ -62,6 +62,7 @@ export default function App() {
         onStop={stop}
         contextReady={contextReady}
         onToggleContext={() => setShowContext((open) => !open)}
+        metrics={state.metrics}
       />
 
       {state.error && (

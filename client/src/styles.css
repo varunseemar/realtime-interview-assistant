@@ -140,6 +140,20 @@ select {
   cursor: not-allowed;
 }
 
+.latency {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.latency-main { font-size: 15px; font-weight: 700; }
+.latency-good { color: var(--green); }
+.latency-slow { color: var(--amber); }
+.latency-detail { font-size: 12px; }
+.latency-empty { font-style: italic; }
+
 .error-banner {
   padding: 10px 16px;
   color: var(--red);
