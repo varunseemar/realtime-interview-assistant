@@ -1,5 +1,6 @@
 import { Status } from '../protocol.js';
 import { LatencyStats } from './LatencyStats.jsx';
+import { LevelMeter } from './LevelMeter.jsx';
 
 const STATUS_LABELS = {
   [Status.IDLE]: 'Idle',
@@ -19,6 +20,7 @@ export function StatusBar({
   contextReady,
   onToggleContext,
   metrics,
+  level,
 }) {
   return (
     <header className="status-bar">
@@ -28,6 +30,8 @@ export function StatusBar({
         <span className="status-dot" />
         {STATUS_LABELS[status] ?? status}
       </span>
+
+      <LevelMeter level={level} active={running} />
 
       <label className="source-select">
         Audio

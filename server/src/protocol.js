@@ -6,6 +6,7 @@ export const ClientMsg = Object.freeze({
   START: 'session.start', // { resume, jd, source, chunkMs }
   STOP: 'session.stop',
   MANUAL_QUESTION: 'question.manual', // { text }
+  SPEECH_END: 'audio.speech_end', // browser VAD: speaker went quiet, finalize the transcript now
 });
 
 export const ServerMsg = Object.freeze({
@@ -16,7 +17,7 @@ export const ServerMsg = Object.freeze({
   QUESTION: 'question.detected', // { id, text, behavioral }
   ANSWER_DELTA: 'answer.delta', // { id, token }
   ANSWER_DONE: 'answer.done', // { id, failed? }
-  METRICS: 'metrics', // { id, detectionMs, ttftMs, e2eMs, totalMs }
+  METRICS: 'metrics', // { id, path, detectionMs, sttMs, decisionMs, ttftMs, e2eMs, totalMs }
   ERROR: 'error', // { code, message }
 });
 

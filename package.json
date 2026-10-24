@@ -6,7 +6,7 @@
   "scripts": {
     "setup": "npm install --prefix server && npm install --prefix client",
     "dev": "node scripts/dev.mjs",
-    "test": "npm test --prefix server"
+    "test": "npm test --prefix server && npm test --prefix client"
   },
   "engines": {
     "node": ">=22.9"

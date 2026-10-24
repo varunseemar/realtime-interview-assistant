@@ -4,6 +4,7 @@ export const ClientMsg = Object.freeze({
   START: 'session.start',
   STOP: 'session.stop',
   MANUAL_QUESTION: 'question.manual',
+  SPEECH_END: 'audio.speech_end',
 });
 
 export const ServerMsg = Object.freeze({

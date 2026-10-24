@@ -38,7 +38,12 @@ export default function App() {
         },
       });
       sendJson(ClientMsg.START, { source, resume: context.resume, jd: context.jd, chunkMs: CHUNK_MS });
-      capture.record(sendBinary);
+      capture.record({
+        onChunk: sendBinary,
+        // Browser-side silence detection lets the server finalize the transcript without
+        // waiting for Deepgram's own endpointing.
+        onSpeechEnd: () => sendJson(ClientMsg.SPEECH_END),
+      });
       setRunning(true);
       setShowContext(false);
     } catch (err) {
@@ -63,11 +68,20 @@ export default function App() {
         contextReady={contextReady}
         onToggleContext={() => setShowContext((open) => !open)}
         metrics={state.metrics}
+        level={capture.level}
       />
 
       {state.error && (
         <div className="error-banner" role="alert">
           {state.error}
+        </div>
+      )}
+
+      {running && capture.quiet && (
+        <div className="warning-banner" role="status">
+          {source === 'tab'
+            ? "No audio from the shared tab yet. Tab audio only contains what the tab plays (the other people in the call), not your own microphone. Make sure someone is speaking there and that \"Share tab audio\" was ticked."
+            : 'No audio from the microphone yet. Check that the right mic is selected and not muted.'}
         </div>
       )}
 

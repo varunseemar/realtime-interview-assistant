@@ -42,12 +42,13 @@ export function createSession(socket, { classify, streamAnswer }) {
   // ---------- answering ----------
 
   // speechEndAt: wall-clock ms the interviewer stopped talking (null for typed questions).
-  async function answerQuestion(text, { speechEndAt = null } = {}) {
+  // heardAt: when STT delivered the final words. path: which detection rule fired.
+  async function answerQuestion(text, { speechEndAt = null, heardAt = null, path = 'typed' } = {}) {
     activeAnswer?.controller.abort(); // a newer question always wins
     const id = nextQuestionId++;
     const controller = new AbortController();
     activeAnswer = { id, controller };
-    const timings = { speechEndAt, detectedAt: Date.now(), firstTokenAt: null, doneAt: null };
+    const timings = { speechEndAt, heardAt, detectedAt: Date.now(), firstTokenAt: null, doneAt: null };
 
     send(socket, ServerMsg.QUESTION, { id, text, behavioral: isBehavioral(text) });
     setStatus(Status.THINKING);
@@ -71,8 +72,11 @@ export function createSession(socket, { classify, streamAnswer }) {
       send(socket, ServerMsg.ANSWER_DONE, { id });
 
       const metrics = computeMetrics(timings);
-      send(socket, ServerMsg.METRICS, { id, ...metrics });
-      console.log(`[metrics] #${id} e2e=${metrics.e2eMs}ms detect=${metrics.detectionMs}ms ttft=${metrics.ttftMs}ms`);
+      send(socket, ServerMsg.METRICS, { id, path, ...metrics });
+      console.log(
+        `[metrics] #${id} e2e=${metrics.e2eMs}ms = stt ${metrics.sttMs}ms + decide ${metrics.decisionMs}ms ` +
+          `(${path}) + llm ${metrics.ttftMs}ms | "${text.slice(0, 80)}"`,
+      );
     } catch (err) {
       if (controller.signal.aborted) return; // superseded or session stopped — not an error
       reportError('llm_error', err.message);
@@ -94,8 +98,12 @@ export function createSession(socket, { classify, streamAnswer }) {
 
   function createDetector() {
     const d = new QuestionDetector({ classify });
-    d.on('question', ({ text, audioEndSec, forced }) => {
-      answerQuestion(text, { speechEndAt: forced ? null : audioClock.toWallClock(audioEndSec) });
+    d.on('question', ({ text, audioEndSec, heardAt, path, forced }) => {
+      if (forced) {
+        answerQuestion(text, { path });
+        return;
+      }
+      answerQuestion(text, { speechEndAt: audioClock.toWallClock(audioEndSec), heardAt, path });
     });
     d.on('classifying', () => {
       if (!activeAnswer) setStatus(Status.THINKING);
@@ -116,7 +124,11 @@ export function createSession(socket, { classify, streamAnswer }) {
           text: segment.text,
         });
       }
-      if (segment.isFinal) detector?.addFinal(segment);
+      if (segment.isFinal) {
+        detector?.addFinal(segment);
+        // A forced final means we already saw enough silence: treat it as the end of the turn.
+        if (segment.fromFinalize) detector?.utteranceEnd();
+      }
     });
 
     s.on('utteranceEnd', () => detector?.utteranceEnd());
@@ -183,6 +195,9 @@ export function createSession(socket, { classify, streamAnswer }) {
         break;
       case ClientMsg.MANUAL_QUESTION:
         handleManualQuestion(msg);
+        break;
+      case ClientMsg.SPEECH_END:
+        stt?.finalizePending();
         break;
       default:
         reportError('unknown_message', `Unknown message type: ${msg.type}`);
