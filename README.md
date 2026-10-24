@@ -7,7 +7,7 @@ Browser audio ──► streaming STT ──► question detection ──► str
  (tab or mic)     (Deepgram)        (pause + rules + LLM)   (Groq gpt-oss-20b)
 ```
 
-**Measured:** about **0.7–1.0 s** from the end of a question to the first answer token. The target is under 3 s. See [Latency](#latency).
+**Measured:** about **1.4–1.5 s** from the end of the last spoken word to the first answer token for clear questions, and **1.9–2.3 s** for the hardest cases. The target is under 3 s. See [Latency](#latency).
 
 **Bonus features chosen:** latency metrics in the UI, and conversation memory.
 
@@ -36,7 +36,7 @@ Open **http://localhost:5173** in Chrome.
 **Using it**
 1. Paste your **resume** and the **job description** into the context form. They're saved in your browser only.
 2. Choose an audio source:
-   - **Browser tab (recommended for real calls).** Click Start, pick the Meet/Zoom tab and tick **"Share tab audio"**. Only the interviewer's voice is captured.
+   - **Browser tab (recommended for real calls).** Click Start, pick the Meet/Zoom tab and tick **"Share tab audio"**. Only the interviewer's voice is captured. Tab audio is what the tab *plays*, so your own microphone isn't in it. To test alone, join the call from a second device, or share a tab playing a mock-interview video. The level meter and a "no audio" warning show whether anything is being captured.
    - **Microphone.** Simplest for trying it out: read questions aloud yourself.
 3. Watch the live transcript.
    - Grey italic text is interim (still changing); white text is final.
@@ -48,10 +48,11 @@ Open **http://localhost:5173** in Chrome.
 
 **Tests and browser-free checks**
 ```bash
-npm test                                             # 30 unit tests: detection rules, detector, prompts, metrics
+npm test                                             # 40 unit tests: detection rules, detector, prompts, metrics, silence detector
 cd server
 node scripts/ask.mjs "Tell me about yourself."       # typed questions through the real pipeline
-node scripts/stream-wav.mjs path/to/interview.wav    # streams a WAV like a live mic, prints each decision + latency
+node scripts/stream-wav.mjs path/to/interview.wav    # streams a 16 kHz WAV like a live mic, prints each decision + latency
+DEBUG_STT=1 npm run dev                              # logs every Deepgram event with audio timestamps
 ```
 
 ---
@@ -92,6 +93,7 @@ flowchart LR
 
 **Data flow**
 1. **Audio in.** The browser records 250 ms webm/opus chunks and sends them as binary WebSocket frames. The Vite dev server proxies `/ws`, so the browser only talks to one origin and **API keys never leave the server**.
+   - A small voice-activity detector in the browser watches the audio level. When the speaker goes quiet, it sends `audio.speech_end`, which drives fast end-of-speech detection (see below). The same level feeds the meter and the "no audio" warning.
 2. **STT.** The session forwards the bytes to Deepgram's live WebSocket and sends interim and final transcripts back to the UI as they arrive.
 3. **Detection.** Final segments go to the `QuestionDetector`, which decides when a question is finished (see below).
 4. **Answer.** The question, resume, JD and the last 4 Q&A pairs go to Groq with `stream: true`. Each token is forwarded as an `answer.delta` event.
@@ -104,10 +106,10 @@ flowchart LR
 |---|---|
 | `session.start {resume, jd, source, chunkMs}` | `status {state}`: idle / listening / thinking / answering / error |
 | *binary audio frames* | `transcript.interim` / `transcript.final {text}` |
-| `question.manual {text?}` | `utterance.ignored {text, reason}` |
-| `session.stop` | `question.detected {id, text, behavioral}` |
-| | `answer.delta {id, token}` / `answer.done {id}` |
-| | `metrics {id, detectionMs, ttftMs, e2eMs, totalMs}` / `error {code, message}` |
+| `audio.speech_end` (browser silence detector) | `utterance.ignored {text, reason}` |
+| `question.manual {text?}` | `question.detected {id, text, behavioral}` |
+| `session.stop` | `answer.delta {id, token}` / `answer.done {id}` |
+| | `metrics {id, path, sttMs, decisionMs, ttftMs, e2eMs, totalMs}` / `error {code, message}` |
 
 **Layout**
 ```
@@ -125,9 +127,11 @@ server/src/
   llm/answerer.js          answer streaming
   metrics.js               audio clock + latency maths (unit tested)
 client/src/
-  hooks/useAudioCapture.js     capture + MediaRecorder
+  audio/silenceDetector.js     pure voice-activity logic (unit tested)
+  audio/voiceActivity.js       AnalyserNode loudness monitor
+  hooks/useAudioCapture.js     capture + MediaRecorder + level/quiet state
   hooks/useInterviewSocket.js  socket + reducer (all UI state)
-  components/                  StatusBar, LatencyStats, ContextForm, TranscriptPanel, QuestionPanel, ManualAsk, AnswerPanel, AnswerText
+  components/                  StatusBar, LevelMeter, LatencyStats, ContextForm, TranscriptPanel, QuestionPanel, ManualAsk, AnswerPanel, AnswerText
 ```
 
 ---
@@ -168,13 +172,27 @@ Calling an LLM on every utterance would add 300–700 ms and use up the free-tie
    - Nothing is ever *rejected* on a short pause, because people pause mid-question.
 2. **Long gap (`UtteranceEnd`, about 1 s).** This is the final call:
    - **Noise** (filler such as "okay, got it", or small talk such as "can you hear me", "thanks for joining") is ignored. Small-talk *sentences* are removed first, so "Hi, thanks for joining. So tell me about yourself." still triggers.
-   - **Incomplete** utterances (ending on "and", "the", "your"…) wait another 1.5 s for the rest of the sentence.
+   - **Incomplete** utterances (ending on "and", "the", "your"…) wait another 0.6 s for the rest of the sentence. By then at least 0.7 s of silence has already passed.
    - **Ambiguous statements** go to a fast LLM classifier (JSON mode, 1.2 s timeout).
 3. **Classifier fails closed.** On a timeout or error the utterance is treated as *not* a question. A wrong answer on screen during an interview costs more than a missed one, and the manual buttons cover misses.
 4. **Follow-on merge.** If the interviewer keeps talking within 2 s of a question that already fired ("How would you design a URL shortener? …that handles a billion links a day"), the new part is merged into the question and the answer restarts with the full text.
 5. **Repeats** of the question just answered are ignored.
+6. **Speculative classification.** Ambiguous text is sent to the classifier as soon as the short pause arrives (or when the trailing-word wait starts). By the time the long gap confirms the speaker stopped, the verdict is usually ready. This saves about 0.5 s on those paths, at the cost of an occasional wasted classifier call.
 
 Ignored utterances appear in the transcript with their reason, so the logic can be seen working in the demo.
+
+### End-of-speech: don't wait for the STT provider
+Testing over a Discord call showed a **4.4 s** detection time. With `DEBUG_STT=1` I traced the cause:
+- Deepgram keeps a phrase **interim** for up to 4–5 s after the speaker stops in some cases (sentences ending on "and", and noisy call audio).
+- Its interim results showed the words had stopped about 1.5 s earlier.
+- Its `UtteranceEnd` signal was held back as well, until the final result arrived.
+
+The fix is to detect end-of-speech ourselves and use Deepgram's `Finalize` control message, which flushes the final result in about 0.3 s:
+- **Browser voice-activity detection:** the client measures the audio level from an AnalyserNode. After 0.7 s of silence following at least 0.3 s of speech, it sends `audio.speech_end`, and the server sends `Finalize` if any words are still unfinalised.
+- **Server fallback:** if an interim result's word timings show 0.8 s or more of silence after the last word, the server sends `Finalize` itself.
+- A forced final is treated as end of turn, so the detector makes its decision straight away.
+
+Result on the worst case ("Tell me about the biggest project you have worked on and…"): **6.9 s → 2.3 s** end-to-end.
 
 ### Prompt design ([prompts.js](server/src/llm/prompts.js))
 - **Voice and format:** first person, 3–5 one-sentence bullets, 60–90 words, the direct answer first, nothing else. This makes it something you can glance at and say.
@@ -197,32 +215,39 @@ Ignored utterances appear in the transcript with their reason, so the logic can 
 
 ## Latency
 
-**What's measured:** the server converts Deepgram's audio timestamp for the last word of the question into wall-clock time ([metrics.js](server/src/metrics.js)). Every answer then reports:
-- **detection:** end of speech → question detected (STT finalisation plus the rules or classifier)
-- **LLM:** question detected → first token
-- **end-to-end:** end of speech → first token (the brief's metric). The UI shows the latest value and the session average.
+**What's measured:** the server converts Deepgram's timestamp for the **end of the last spoken word** into wall-clock time ([metrics.js](server/src/metrics.js)). Every answer then reports:
+- **STT:** last word spoken → final transcript received
+- **decide:** final transcript → question fired, plus which rule fired (pause, long gap, classifier, trailing word + classifier, follow-on)
+- **LLM:** question fired → first token
+- **end-to-end:** last word → first token (the brief's metric). The UI shows the latest value with this breakdown, plus the session average.
 
-**Measured** with `scripts/stream-wav.mjs` streaming text-to-speech interview audio in real time:
+An earlier version measured from the end of Deepgram's *segment*, which includes trailing silence and made STT look about 0.5 s faster than it was. The numbers below use the corrected measurement.
 
-| Question | Detection | LLM first token | **End-to-end** |
-|---|---|---|---|
-| "So tell me about yourself." | 431 ms | 306 ms | **737 ms** |
-| "How would you design rate limiting for a public API?" | 547 ms | 444 ms | **991 ms** |
+**Measured** with `scripts/stream-wav.mjs`, which streams text-to-speech interview audio in real time and emulates the browser's silence detector:
+
+| Question | Path | STT | Decide | LLM | **End-to-end** |
+|---|---|---|---|---|---|
+| "So, tell me about yourself." | pause | 984 ms | 0 ms | 491 ms | **1.48 s** |
+| "How would you design rate limiting for a public API?" | long gap | 988 ms | 1 ms | 414 ms | **1.40 s** |
+| "What is the difference between SQL and NoSQL databases?" | pause | 1097 ms | 0 ms | 446 ms | **1.54 s** |
+| "I'm interested in your experience with automated testing." | classifier | 957 ms | 468 ms | 434 ms | **1.86 s** |
+| "Tell me about the biggest project you have worked on and…" | trailing word + classifier | 1123 ms | 621 ms | 511 ms | **2.26 s** (was 6.9 s) |
 
 **Budget and where the time goes**
 
 | Stage | Typical |
 |---|---|
-| MediaRecorder chunking | ≤ 250 ms |
-| Deepgram finalisation (300 ms endpointing + processing) | 300–550 ms |
+| MediaRecorder chunking (audio reaches Deepgram in 250 ms batches) | ≤ 250 ms |
+| Deepgram endpointing (300 ms of silence) + processing, or browser silence detection (700 ms) + `Finalize` | 0.9–1.2 s |
 | Rules | ~0 ms |
-| Groq time to first token | 300–900 ms |
-| **Clear questions** | **about 0.7–1.5 s** |
-| Ambiguous statements (wait for the 1 s `UtteranceEnd` gap, then the classifier at about 0.5–0.7 s) | about 1.8–2.5 s |
+| Classifier (only for ambiguous text; usually started speculatively) | 0–0.6 s |
+| Groq time to first token | 0.3–0.9 s |
+| **Clear questions** | **about 1.4–1.6 s** |
+| **Ambiguous or trailing-off questions** | **about 1.9–2.3 s** |
 
 **If it went over 3 s,** the levers are:
 - Act on interim transcripts that already look like complete questions.
-- Shorten the endpointing window.
+- Shorten the endpointing window or the browser silence window (0.7 s), trading speed against cutting people off.
 - Use PCM instead of webm chunks.
 - Use a smaller or dedicated model (Groq's queue time is the biggest variable on the free tier).
 - Start the LLM call speculatively and cancel it if the interviewer keeps talking.
@@ -238,6 +263,8 @@ Ignored utterances appear in the transcript with their reason, so the logic can 
 - **No automatic reconnect.** If the browser-to-server socket or Deepgram drops, the UI shows an error and you press Start again. Context and settings are kept.
 - **Free-tier limits.** Groq rate limits show up as a clear error. There's no retry or queueing.
 - **The latency clock is approximate.** It assumes real-time audio and is accurate to within about one chunk (250 ms).
+- **The browser silence detector uses a fixed level threshold** (about -40 dBFS). It works well with call apps' noise suppression and with headset mics. Constant loud background noise would keep it from firing; the server-side fallback and Deepgram's own endpointing still apply then, just more slowly.
+- **Background-tab throttling.** Chrome slows timers in hidden tabs, which delays the silence detector. Keep the assistant visible (a separate window beside the call) rather than a background tab. Recording and transcription are not affected.
 - **Chrome only for tab audio.** Firefox and Safari don't support `getDisplayMedia` audio the same way.
 - **Dev setup only.** There's no production build, auth, persistence or deployment (out of scope).
 
