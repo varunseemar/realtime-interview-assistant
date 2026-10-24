@@ -28,10 +28,14 @@ export class AudioClock {
 const elapsed = (from, to) => (from == null || to == null ? null : Math.max(0, Math.round(to - from)));
 
 // All inputs are wall-clock ms. speechEndAt is null for typed questions.
-export function computeMetrics({ speechEndAt, detectedAt, firstTokenAt, doneAt }) {
+// heardAt is when the last final transcript segment arrived, which splits detection into
+// "waiting for STT to finalise the words" and "deciding it was a question".
+export function computeMetrics({ speechEndAt, heardAt = null, detectedAt, firstTokenAt, doneAt }) {
   const origin = speechEndAt ?? detectedAt;
   return {
     detectionMs: elapsed(speechEndAt, detectedAt), // STT endpointing + rules/classifier
+    sttMs: elapsed(speechEndAt, heardAt), // end of speech -> final transcript received
+    decisionMs: elapsed(heardAt, detectedAt), // final transcript -> question fired (pauses, classifier)
     ttftMs: elapsed(detectedAt, firstTokenAt), // LLM time to first token
     e2eMs: elapsed(origin, firstTokenAt), // end of question -> first token (headline)
     totalMs: elapsed(origin, doneAt), // end of question -> full answer

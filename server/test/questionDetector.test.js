@@ -119,5 +119,56 @@ describe('QuestionDetector', () => {
     assert.equal(detector.forceQuestion(), true);
     assert.equal(events[1].type, 'question');
     assert.equal(events[1].text, 'Kafka versus RabbitMQ.');
+    assert.equal(events[1].path, 'manual');
+  });
+
+  it('reports which rule fired', async () => {
+    const { detector, events } = setup({ classifierSays: true });
+    detector.addFinal(segment('Tell me about yourself.', 0, 2));
+    detector.addFinal(segment('I am curious about the scaling work you did at Acme.', 30, 33));
+    detector.utteranceEnd();
+    await delay(0);
+    assert.deepEqual(events.map((e) => e.path), ['pause', 'classifier']);
+  });
+
+  it('records when the final words arrived from STT', () => {
+    let clock = 1000;
+    const detector = new QuestionDetector({ classify: async () => ({ isQuestion: false }), now: () => clock });
+    const events = [];
+    detector.on('question', (e) => events.push(e));
+    detector.addFinal(segment('So walk me through', 0, 1, false));
+    clock = 1800;
+    detector.addFinal(segment('your last project.', 1, 2));
+    assert.equal(events[0].heardAt, 1800);
+  });
+
+  it('starts the classifier at the short pause and reuses it at the long gap', async () => {
+    const { detector, events, classified } = setup({ classifierSays: true });
+    detector.addFinal(segment('I am curious about the scaling work you did at Acme.', 0, 3));
+    assert.equal(classified.length, 1, 'classifier should start before the long gap');
+    detector.utteranceEnd();
+    await delay(0);
+    assert.equal(classified.length, 1, 'the speculative result should be reused');
+    assert.equal(events[0].path, 'classifier');
+  });
+
+  it('discards a speculative result when the speaker kept talking', async () => {
+    const { detector, classified } = setup({ classifierSays: false });
+    detector.addFinal(segment('I am curious about the scaling work', 0, 2));
+    detector.addFinal(segment('you did at Acme last year.', 2.2, 4));
+    detector.utteranceEnd();
+    await delay(0);
+    assert.deepEqual(classified, [
+      'I am curious about the scaling work',
+      'I am curious about the scaling work you did at Acme last year.',
+    ]);
+  });
+
+  it('classifies a trailing fragment once the extra wait expires', async () => {
+    const { detector, events } = setup({ classifierSays: true });
+    detector.addFinal(segment('What I want to understand is your experience with Kafka and', 0, 4));
+    detector.utteranceEnd();
+    await delay(40);
+    assert.equal(events[0].path, 'wait+classifier');
   });
 });

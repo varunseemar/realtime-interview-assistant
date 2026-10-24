@@ -17,13 +17,33 @@ describe('AudioClock', () => {
 });
 
 describe('computeMetrics', () => {
-  it('splits end-to-end latency into detection and LLM time', () => {
-    const metrics = computeMetrics({ speechEndAt: 1000, detectedAt: 1400, firstTokenAt: 2000, doneAt: 2300 });
-    assert.deepEqual(metrics, { detectionMs: 400, ttftMs: 600, e2eMs: 1000, totalMs: 1300 });
+  it('splits end-to-end latency into STT, decision and LLM time', () => {
+    const metrics = computeMetrics({
+      speechEndAt: 1000,
+      heardAt: 1300,
+      detectedAt: 1400,
+      firstTokenAt: 2000,
+      doneAt: 2300,
+    });
+    assert.deepEqual(metrics, {
+      detectionMs: 400,
+      sttMs: 300,
+      decisionMs: 100,
+      ttftMs: 600,
+      e2eMs: 1000,
+      totalMs: 1300,
+    });
   });
 
   it('measures typed questions from the moment they were submitted', () => {
     const metrics = computeMetrics({ speechEndAt: null, detectedAt: 1000, firstTokenAt: 1500, doneAt: 1800 });
-    assert.deepEqual(metrics, { detectionMs: null, ttftMs: 500, e2eMs: 500, totalMs: 800 });
+    assert.deepEqual(metrics, {
+      detectionMs: null,
+      sttMs: null,
+      decisionMs: null,
+      ttftMs: 500,
+      e2eMs: 500,
+      totalMs: 800,
+    });
   });
 });
