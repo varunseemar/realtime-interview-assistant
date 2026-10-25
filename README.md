@@ -11,6 +11,8 @@ Browser audio ──► streaming STT ──► question detection ──► str
 
 **Bonus features chosen:** latency metrics in the UI, and conversation memory.
 
+**Demo video:** [Hidani Interview Assistant.mp4 (Google Drive)](https://drive.google.com/file/d/1G8zhv7c5HW_XdSyzQ_DwTrV_Bk0q3snp/view?usp=sharing)
+
 ---
 
 ## Quick start
