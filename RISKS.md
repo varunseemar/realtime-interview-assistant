@@ -1,7 +1,11 @@
 # Top 3 risks of taking this POC to production
 
-**1. Answers that misrepresent the candidate.** The model still sometimes invents plausible details, such as a metric in a behavioral story. One invented claim that gets probed in a follow-up hurts the user more than no answer at all. Detection mistakes add to this: answering small talk distracts, and missing a question makes the product feel broken.
-*Mitigation:* gate every prompt, model or threshold change on a labelled set of real interview recordings, measuring detection accuracy, misses and unsupported claims. Extract resume facts into a structured list, require answers to cite them, and flag unsupported sentences in the UI.
+**1. Latency and reliability depend on third parties.** The loop chains two external streaming services, Deepgram and Groq, on free tiers with queueing, rate limits and outages. In testing, Groq's time to first token varied from 0.3 to 0.9 s, and Deepgram held back final transcripts for up to 5 s until I forced them. An answer that arrives late is effectively a failed one.
+*Mitigation:*
+- Use paid tiers with SLAs, deployed in the same region as the providers.
+- Put a fallback provider behind the existing STT and LLM interfaces, with circuit breakers.
+- Reconnect automatically and buffer audio (PCM, not webm) so dropped streams don't lose words.
+- Monitor p95 end-to-end latency per stage and alert on it.
 
 **2. Cost growth and abuse.** Speech-to-text is billed per audio minute and the app streams continuously, silence included. Every utterance can trigger an LLM call, and speculative classification deliberately makes extra ones. With no accounts or per-user limits, a tab left shared all day, or a script hitting the endpoint, gets expensive quickly.
 *Mitigation:*
